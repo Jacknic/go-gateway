@@ -73,14 +73,15 @@ func connectSSH(config Config) (*ssh.Client, error) {
 
 // PortForwarder manages local or remote TCP sockets and forwards traffic over SSH.
 type PortForwarder struct {
-	sshClient   *ssh.Client
-	localPort   int
-	remotePort  int
-	reverse     bool
-	listener    net.Listener // Local listener (for local -> remote)
-	sshListener net.Listener // Remote listener (for remote -> local)
-	mu          sync.Mutex
-	activeConn  int
+	sshClient      *ssh.Client
+	localPort      int
+	remotePort     int
+	reverse        bool
+	useCmdFallback bool         // Enable SSH Command-based Remote Listener fallback if -R is disabled
+	listener       net.Listener // Local listener (for local -> remote)
+	sshListener    net.Listener // Remote listener (for remote -> local)
+	mu             sync.Mutex
+	activeConn     int
 }
 
 func NewPortForwarder(client *ssh.Client, local, remote int, reverse bool) (*PortForwarder, error) {
@@ -93,25 +94,41 @@ func NewPortForwarder(client *ssh.Client, local, remote int, reverse bool) (*Por
 
 	if reverse {
 		// Remote Port Forwarding: listen on remote port
-		// Try binding to 127.0.0.1:remotePort first (standard loopback, most secure).
-		// If that fails, fallback to 0.0.0.0:remotePort or :remotePort to cover all environments.
-		addr := fmt.Sprintf("127.0.0.1:%d", remote)
-		listener, err := client.Listen("tcp", addr)
-		if err != nil {
-			log.Printf("[*] Failed to bind remote port forwarding on 127.0.0.1:%d: %v. Retrying with 0.0.0.0:%d...\n", remote, err, remote)
-			addr = fmt.Sprintf("0.0.0.0:%d", remote)
-			listener, err = client.Listen("tcp", addr)
-			if err != nil {
-				log.Printf("[*] Failed to bind remote port forwarding on 0.0.0.0:%d: %v. Retrying with default loopback fallback (:port)...\n", remote, err)
-				addr = fmt.Sprintf(":%d", remote)
-				listener, err = client.Listen("tcp", addr)
-				if err != nil {
-					return nil, fmt.Errorf("failed to listen on remote port %d with all bind configurations: %w", remote, err)
-				}
-			}
+		// Try multiple bind configurations to guarantee a listening port on the target interface.
+		// On dual-stack or container environments, resolving localhost or using different wildcards
+		// can behave differently. We loop through the standard options.
+		bindAddresses := []string{
+			fmt.Sprintf("127.0.0.1:%d", remote),
+			fmt.Sprintf("localhost:%d", remote),
+			fmt.Sprintf("0.0.0.0:%d", remote),
+			fmt.Sprintf("[::1]:%d", remote),
+			fmt.Sprintf(":%d", remote),
 		}
-		log.Printf("[+] Remote port forwarding successfully bound on remote interface %s\n", addr)
-		pf.sshListener = listener
+
+		var listener net.Listener
+		var err error
+		var successfulAddr string
+
+		log.Printf("[*] Initiating remote port forwarding bind loop for port %d...\n", remote)
+		for _, addr := range bindAddresses {
+			log.Printf("[*] Trying to bind remote port forwarding on %s...\n", addr)
+			listener, err = client.Listen("tcp", addr)
+			if err == nil {
+				successfulAddr = addr
+				break
+			}
+			log.Printf("[-] Failed to bind on %s: %v\n", addr, err)
+		}
+
+		if err != nil {
+			log.Printf("[-] Standard SSH Remote Port Forwarding (-R) failed: %v\n", err)
+			log.Printf("[*] SSH -R reverse port forwarding is disabled on the remote SSH server.\n")
+			log.Printf("[*] Falling back to SSH Command-based Remote Port Forwarder (using Python on remote side) to listen on remote port %d...\n", remote)
+			pf.useCmdFallback = true
+		} else {
+			log.Printf("[+] Remote port forwarding successfully bound on remote interface: %s\n", successfulAddr)
+			pf.sshListener = listener
+		}
 	} else {
 		// Local Port Forwarding: listen on local port
 		addr := fmt.Sprintf("127.0.0.1:%d", local)
@@ -125,9 +142,232 @@ func NewPortForwarder(client *ssh.Client, local, remote int, reverse bool) (*Por
 	return pf, nil
 }
 
+// startCommandBasedReverse runs a remote listener process via SSH session, receiving connections and piping data.
+func (pf *PortForwarder) startCommandBasedReverse() error {
+	log.Printf("[+] SSH Command-based Remote Port Forwarder starting (remote:%d -> local:%d)\n", pf.remotePort, pf.localPort)
+
+	for {
+		// Start a new SSH session for each incoming connection
+		session, err := pf.sshClient.NewSession()
+		if err != nil {
+			log.Printf("[-] Failed to create SSH session for remote listener: %v. Retrying in 3s...\n", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		stdoutPipe, err := session.StdoutPipe()
+		if err != nil {
+			session.Close()
+			log.Printf("[-] Failed to get stdout pipe: %v\n", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		stderrPipe, err := session.StderrPipe()
+		if err != nil {
+			session.Close()
+			log.Printf("[-] Failed to get stderr pipe: %v\n", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		stdinPipe, err := session.StdinPipe()
+		if err != nil {
+			session.Close()
+			log.Printf("[-] Failed to get stdin pipe: %v\n", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+
+		// Python command to listen on remotePort and pipe to stdin/stdout
+		pythonCmd := fmt.Sprintf(`python3 -c "
+import socket, sys, threading
+def pipe(src, dst):
+    try:
+        while True:
+            data = src.recv(4096)
+            if not data: break
+            dst.write(data)
+            dst.flush()
+    except: pass
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+try:
+    s.bind(('127.0.0.1', %d))
+except Exception as e:
+    sys.stderr.write('BIND_ERROR: ' + str(e))
+    sys.stderr.flush()
+    sys.exit(1)
+s.listen(1)
+sys.stderr.write('LISTENING')
+sys.stderr.flush()
+try:
+    conn, addr = s.accept()
+except:
+    sys.exit(0)
+sys.stderr.write('CONNECTED')
+sys.stderr.flush()
+t = threading.Thread(target=pipe, args=(conn, sys.stdout.buffer if hasattr(sys.stdout, 'buffer') else sys.stdout))
+t.daemon = True
+t.start()
+stdin_file = sys.stdin.buffer if hasattr(sys.stdin, 'buffer') else sys.stdin
+try:
+    while True:
+        data = stdin_file.read(4096)
+        if not data: break
+        conn.sendall(data)
+except: pass
+finally:
+    conn.close()
+"`, pf.remotePort)
+
+		// Start the remote command
+		if err := session.Start(pythonCmd); err != nil {
+			session.Close()
+			log.Printf("[-] Failed to start remote python3 listener: %v. Retrying with 'python'...\n", err)
+			// Try 'python' instead of 'python3'
+			session, err = pf.sshClient.NewSession()
+			if err != nil {
+				time.Sleep(3 * time.Second)
+				continue
+			}
+			stdoutPipe, _ = session.StdoutPipe()
+			stderrPipe, _ = session.StderrPipe()
+			stdinPipe, _ = session.StdinPipe()
+			
+			pythonCmdFallback := strings.Replace(pythonCmd, "python3 -c", "python -c", 1)
+			if err := session.Start(pythonCmdFallback); err != nil {
+				session.Close()
+				log.Printf("[-] Failed to start remote python fallback listener: %v. Retrying in 5s...\n", err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+		}
+
+		// Set up status channels
+		listeningChan := make(chan bool, 1)
+		connectedChan := make(chan bool, 1)
+		errChan := make(chan string, 1)
+
+		// Continuously read stderr to detect status
+		go func() {
+			buf := make([]byte, 1024)
+			for {
+				n, err := stderrPipe.Read(buf)
+				if err != nil {
+					return
+				}
+				msg := string(buf[:n])
+				if strings.Contains(msg, "BIND_ERROR") {
+					errChan <- msg
+					return
+				}
+				if strings.Contains(msg, "LISTENING") {
+					listeningChan <- true
+				}
+				if strings.Contains(msg, "CONNECTED") {
+					connectedChan <- true
+					return
+				}
+			}
+		}()
+
+		// Wait for BIND or LISTENING
+		select {
+		case <-listeningChan:
+			log.Printf("[+] Remote command listener successfully bound and listening on remote port %d\n", pf.remotePort)
+		case errMsg := <-errChan:
+			log.Printf("[-] Remote listener error during bind: %s. Re-trying in 5s...\n", errMsg)
+			session.Close()
+			time.Sleep(5 * time.Second)
+			continue
+		case <-time.After(10 * time.Second):
+			log.Printf("[-] Timeout waiting for remote listener to start. Re-trying...\n")
+			session.Close()
+			continue
+		}
+
+		// Wait for remote client connection (accept)
+		select {
+		case <-connectedChan:
+			log.Printf("[+] Remote client connected to remote port %d. Initiating tunnel...\n", pf.remotePort)
+		case errMsg := <-errChan:
+			log.Printf("[-] Remote listener encountered error: %s. Re-starting listener...\n", errMsg)
+			session.Close()
+			continue
+		case <-time.After(1 * time.Hour): // Wait up to an hour for a connection
+			log.Printf("[-] Timeout waiting for remote client connection on port %d. Re-starting listener...\n", pf.remotePort)
+			session.Close()
+			continue
+		}
+
+		// Now that a remote client connected, connect to the local target port
+		localAddr := fmt.Sprintf("127.0.0.1:%d", pf.localPort)
+		localConn, err := net.DialTimeout("tcp", localAddr, 5*time.Second)
+		if err != nil {
+			log.Printf("[-] Failed to connect to local target port %d: %v. Closing remote channel...\n", pf.localPort, err)
+			session.Close()
+			continue
+		}
+
+		pf.mu.Lock()
+		pf.activeConn++
+		active := pf.activeConn
+		pf.mu.Unlock()
+
+		log.Printf("[*] Command-based Reverse Connection #%d accepted on remote. Tunneling to local:%d...\n", active, pf.localPort)
+
+		// Pipe the SSH session stdin/stdout with localConn bi-directionally
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		var sentBytes, recvBytes int64
+		startTime := time.Now()
+
+		// Copy remote -> local (Stdout of SSH session contains remote data, write to localConn)
+		go func() {
+			defer wg.Done()
+			copied, err := io.Copy(localConn, stdoutPipe)
+			if err != nil {
+				// expected EOF/Close
+			}
+			recvBytes = copied
+			localConn.Close() // close write side of local
+		}()
+
+		// Copy local -> remote (Read localConn, write to SSH session stdin)
+		go func() {
+			defer wg.Done()
+			copied, err := io.Copy(stdinPipe, localConn)
+			if err != nil {
+				// expected EOF/Close
+			}
+			sentBytes = copied
+			stdinPipe.Close() // close write side of SSH session
+		}()
+
+		// Wait for data piping to complete, then close session and clean up
+		wg.Wait()
+		localConn.Close()
+		session.Close()
+
+		duration := time.Since(startTime)
+		log.Printf("[+] Command-based Reverse Tunnel #%d summary: %d bytes sent, %d bytes received, session duration: %v\n",
+			active, sentBytes, recvBytes, duration)
+
+		pf.mu.Lock()
+		pf.activeConn--
+		pf.mu.Unlock()
+
+		// Instantly restart listener for next connection
+	}
+}
+
 // Start runs the TCP server, blocking until closed.
 func (pf *PortForwarder) Start() error {
 	if pf.reverse {
+		if pf.useCmdFallback {
+			return pf.startCommandBasedReverse()
+		}
+
 		log.Printf("[+] Remote Port Forwarder listening on remote:%d (forwarding to local:%d)\n", pf.remotePort, pf.localPort)
 		defer pf.sshListener.Close()
 
