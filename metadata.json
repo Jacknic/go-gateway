@@ -1,0 +1,6 @@
+{
+  "name": "Go Remote Dev Gateway",
+  "description": "A JetBrains Gateway style remote development control panel with full Go implementations for low-latency TCP port-forwarding and delta file synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

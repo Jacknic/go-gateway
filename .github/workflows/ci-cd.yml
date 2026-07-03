@@ -1,0 +1,133 @@
+name: Go Gateway & Web App CI/CD
+
+on:
+  push:
+    branches: [ "main", "master", "dev" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  # -----------------------------------------------------------------
+  # JOB 1: Web App & Full-Stack Server Build and Validation
+  # -----------------------------------------------------------------
+  web-app-ci:
+    name: Web App CI (Node.js)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Base Dependencies
+        run: npm ci
+
+      - name: Run Type Checks and Linter
+        run: npm run lint
+
+      - name: Build Fullstack Production Target
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+  # -----------------------------------------------------------------
+  # JOB 2: Go Gateway Component Validation and Tests
+  # -----------------------------------------------------------------
+  go-gateway-ci:
+    name: Go Gateway CI (Golang)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: go-gateway/go.mod
+
+      - name: Verify Go Formatting
+        working-directory: ./go-gateway
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "[-] Go code is not formatted properly. Please run 'gofmt -w .'"
+            gofmt -d .
+            exit 1
+          fi
+
+      - name: Install Go Dependencies
+        working-directory: ./go-gateway
+        run: |
+          go mod init github.com/jackoktea/go-gateway || true
+          go get golang.org/x/crypto/ssh
+
+      - name: Build Local Go Binary
+        working-directory: ./go-gateway
+        run: go build -v -o gateway main.go forward.go sync.go
+
+  # -----------------------------------------------------------------
+  # JOB 3: Multi-Platform Cross-Compilation & Release Artifacts
+  # -----------------------------------------------------------------
+  go-cross-compile:
+    name: Go Cross-Compile Release
+    needs: [go-gateway-ci]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Cross compile for major consumer & server OS/Architecture pairs
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go Environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Go Dependencies
+        working-directory: ./go-gateway
+        run: |
+          go mod init github.com/jackoktea/go-gateway || true
+          go get golang.org/x/crypto/ssh
+
+      - name: Cross Compile Binary
+        working-directory: ./go-gateway
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          # Define executable suffix for Windows
+          BINARY_NAME="gateway"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="gateway.exe"
+          fi
+          
+          # Perform optimized light release build
+          go build -ldflags="-s -w" -v -o "${BINARY_NAME}" main.go forward.go sync.go
+          
+          # Create compressed release archive to optimize bandwidth
+          ARCHIVE_NAME="go-gateway-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p ../dist-binaries
+          
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "../dist-binaries/${ARCHIVE_NAME}.zip" "${BINARY_NAME}" README.md
+          else
+            tar -czvf "../dist-binaries/${ARCHIVE_NAME}.tar.gz" "${BINARY_NAME}" README.md
+          fi
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-gateway-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist-binaries/
+          retention-days: 14
