@@ -166,13 +166,13 @@ export default function App() {
     }
   };
 
-  const handleAddPortMapping = async (name: string, localPort: number, remotePort: number) => {
+  const handleAddPortMapping = async (name: string, localPort: number, remotePort: number, reverse?: boolean) => {
     if (!activeWorkspace) return;
     try {
       const res = await fetch(`/api/workspaces/${activeWorkspace.id}/ports`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, localPort, remotePort }),
+        body: JSON.stringify({ name, localPort, remotePort, reverse }),
       });
       const newMapping = await res.json();
       setPortMappings((prev) => [...prev, newMapping]);

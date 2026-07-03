@@ -40,7 +40,7 @@ This creates a standalone `gateway` executable on Linux/macOS, or `gateway.exe` 
 
 Run the compiled binary with flags to configure the modes of operation.
 
-### A. Local Port Mapping Forwarding Mode
+### A. Local Port Mapping Forwarding Mode (Local Tunnel, -L)
 Forward remote database or application ports (e.g., remote port `8080` running on the server) to your local environment (local port `8080`):
 
 ```bash
@@ -52,7 +52,20 @@ Forward remote database or application ports (e.g., remote port `8080` running o
           -remote-port 8080
 ```
 
-### B. High-Speed File Synchronization Mode
+### B. Remote/Reverse Port Forwarding Mode (Reverse Tunnel, -R)
+Forward a service listening on your local machine (e.g., local ADB daemon running on port `5555`) to a port on the remote development machine (remote port `5555`), allowing tools running on the server to access your local devices/services:
+
+```bash
+./gateway -mode forward \
+          -host "your-remote-host.com:22" \
+          -user "ubuntu" \
+          -key "~/.ssh/id_rsa" \
+          -local-port 5555 \
+          -remote-port 5555 \
+          -reverse=true
+```
+
+### C. High-Speed File Synchronization Mode
 Synchronize your local directory `~/projects/my-app` with your remote server directory `/var/www/my-app` with active file system watching:
 
 ```bash
@@ -64,7 +77,7 @@ Synchronize your local directory `~/projects/my-app` with your remote server dir
           -watch=true
 ```
 
-### C. Hybrid Mode (Both Forwarding and Syncing)
+### D. Hybrid Mode (Both Forwarding and Syncing)
 Enable both continuous port mapping and file watching in a single workspace session:
 
 ```bash

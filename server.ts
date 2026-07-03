@@ -305,7 +305,7 @@ app.get("/api/workspaces/:id/ports", (req, res) => {
 
 // Add Port Mapping
 app.post("/api/workspaces/:id/ports", (req, res) => {
-  const { name, localPort, remotePort } = req.body;
+  const { name, localPort, remotePort, reverse } = req.body;
   if (!localPort || !remotePort) {
     return res.status(400).json({ error: "Local and Remote ports are required" });
   }
@@ -317,6 +317,7 @@ app.post("/api/workspaces/:id/ports", (req, res) => {
     localPort: Number(localPort),
     remotePort: Number(remotePort),
     active: true,
+    reverse: !!reverse,
     metrics: {
       bytesSent: 0,
       bytesReceived: 0,
@@ -329,12 +330,15 @@ app.post("/api/workspaces/:id/ports", (req, res) => {
   
   const filesStore = workspaceFiles[req.params.id];
   if (filesStore) {
+    const bindMessage = !!reverse
+      ? `Bound remote listener 127.0.0.1:${remotePort} -> local:${localPort} (Reverse Tunnel)`
+      : `Bound local listener 127.0.0.1:${localPort} -> remote:${remotePort}`;
     filesStore.logs.push({
       id: "log-" + Date.now(),
       timestamp: new Date().toLocaleTimeString(),
       level: "info",
       source: "forward",
-      message: `Bound local listener 127.0.0.1:${localPort} -> remote:${remotePort}`
+      message: bindMessage
     });
   }
 

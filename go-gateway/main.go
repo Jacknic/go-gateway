@@ -17,8 +17,9 @@ type Config struct {
 	SSHKeyPath string // SSH private key file path
 
 	// Port forwarding params
-	LocalPort  int // e.g. 8080
-	RemotePort int // e.g. 8080
+	LocalPort  int  // e.g. 8080
+	RemotePort int  // e.g. 8080
+	Reverse    bool // Enable Remote/Reverse port forwarding
 
 	// Sync params
 	LocalDir  string // e.g. "./src"
@@ -36,8 +37,9 @@ func main() {
 	flag.StringVar(&config.SSHKeyPath, "key", "", "SSH private key file path")
 
 	// Port forward flags
-	flag.IntVar(&config.LocalPort, "local-port", 8080, "Local port to listen on for forwarding")
-	flag.IntVar(&config.RemotePort, "remote-port", 8080, "Target port on the remote host")
+	flag.IntVar(&config.LocalPort, "local-port", 8080, "Local port to listen/connect on for forwarding")
+	flag.IntVar(&config.RemotePort, "remote-port", 8080, "Remote port to listen/connect on for forwarding")
+	flag.BoolVar(&config.Reverse, "reverse", false, "Enable remote port forwarding (reverse tunnel): forward a local port to a remote listener")
 
 	// Sync flags
 	flag.StringVar(&config.LocalDir, "local-dir", "./", "Local directory to synchronize")
@@ -69,8 +71,12 @@ func main() {
 
 	switch config.Mode {
 	case "forward":
-		log.Printf("[*] Launching Local Port Forwarder: local:%d -> remote:%d\n", config.LocalPort, config.RemotePort)
-		forwarder, err := NewPortForwarder(sshClient, config.LocalPort, config.RemotePort)
+		if config.Reverse {
+			log.Printf("[*] Launching Remote Port Forwarder (Reverse Tunnel): remote:%d -> local:%d\n", config.RemotePort, config.LocalPort)
+		} else {
+			log.Printf("[*] Launching Local Port Forwarder: local:%d -> remote:%d\n", config.LocalPort, config.RemotePort)
+		}
+		forwarder, err := NewPortForwarder(sshClient, config.LocalPort, config.RemotePort, config.Reverse)
 		if err != nil {
 			log.Fatalf("[-] Forwarder initialization failed: %v", err)
 		}
@@ -103,7 +109,7 @@ func main() {
 	case "both":
 		// Run both port forward and file syncer
 		log.Printf("[*] Launching BOTH Port Forwarder and File Syncer...\n")
-		forwarder, err := NewPortForwarder(sshClient, config.LocalPort, config.RemotePort)
+		forwarder, err := NewPortForwarder(sshClient, config.LocalPort, config.RemotePort, config.Reverse)
 		if err != nil {
 			log.Fatalf("[-] Forwarder initialization failed: %v", err)
 		}

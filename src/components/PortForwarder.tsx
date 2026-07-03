@@ -6,7 +6,7 @@ import { PortMapping, Workspace } from "../types";
 interface PortForwarderProps {
   workspace: Workspace;
   portMappings: PortMapping[];
-  onAddPortMapping: (name: string, local: number, remote: number) => void;
+  onAddPortMapping: (name: string, local: number, remote: number, reverse?: boolean) => void;
   onTogglePortMapping: (id: string) => void;
 }
 
@@ -21,7 +21,7 @@ const generateChartData = () => {
     });
   }
   return data;
-};
+}
 
 export default function PortForwarder({
   workspace,
@@ -32,6 +32,7 @@ export default function PortForwarder({
   const [name, setName] = useState("");
   const [localPort, setLocalPort] = useState<number | "">("");
   const [remotePort, setRemotePort] = useState<number | "">("");
+  const [reverse, setReverse] = useState(false);
   const [chartData, setChartData] = useState(generateChartData());
 
   const activeMappings = portMappings.filter(pm => pm.active);
@@ -67,9 +68,10 @@ export default function PortForwarder({
     e.preventDefault();
     if (!localPort || !remotePort) return;
     onAddPortMapping(
-      name || `端口 ${localPort} 映射`,
+      name || `${reverse ? "反向" : "标准"}端口 ${localPort} 映射`,
       Number(localPort),
-      Number(remotePort)
+      Number(remotePort),
+      reverse
     );
     setName("");
     setLocalPort("");
@@ -147,45 +149,57 @@ export default function PortForwarder({
         <div className="lg:col-span-2 space-y-4">
           {/* Configure new map */}
           <div className="bg-[#181a28] border border-[#26293a] rounded-lg p-4">
-            <h3 className="text-xs font-semibold text-white mb-3 flex items-center gap-1.5">
+            <h3 className="text-xs font-semibold text-white mb-1 flex items-center gap-1.5">
               <Globe size={14} className="text-[#f97316]" />
-              映射本地端口到远程服务器 (SSH 隧道端口转发)
+              本地与远程服务器端口转发 (SSH 隧道)
             </h3>
+            <p className="text-[10px] text-gray-400 mb-4">
+              支持<b>标准本地转发</b>（将远程开发机服务映射到本地，如数据库）或<b>反向隧道转发</b>（将本地设备/服务映射到远程，如 <b>ADB 设备 5555</b>）。
+            </p>
 
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
               <div>
                 <label className="block text-[10px] text-gray-400 mb-1">服务/映射名称</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Spring/Vite Dev"
+                  placeholder={reverse ? "e.g. ADB Device" : "e.g. Spring/Vite Dev"}
                   className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316] placeholder-gray-600"
                 />
               </div>
               <div>
-                <label className="block text-[10px] text-gray-400 mb-1">本地监听端口 (Local)</label>
+                <label className="block text-[10px] text-gray-400 mb-1">转发/隧道方向</label>
+                <select
+                  value={reverse ? "reverse" : "local"}
+                  onChange={(e) => setReverse(e.target.value === "reverse")}
+                  className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316]"
+                >
+                  <option value="local">本地➔远程 (标准 -L)</option>
+                  <option value="reverse">远程➔本地 (反向 -R)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">本地端口 (Local)</label>
                 <input
                   type="number"
                   value={localPort}
                   onChange={(e) => setLocalPort(e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="e.g. 8080"
+                  placeholder={reverse ? "5555" : "8080"}
                   className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316]"
                   required
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <label className="block text-[10px] text-gray-400 mb-1">远程目标端口 (Remote)</label>
-                  <input
-                    type="number"
-                    value={remotePort}
-                    onChange={(e) => setRemotePort(e.target.value === "" ? "" : Number(e.target.value))}
-                    placeholder="e.g. 8080"
-                    className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316]"
-                    required
-                  />
-                </div>
+              <div>
+                <label className="block text-[10px] text-gray-400 mb-1">远程端口 (Remote)</label>
+                <input
+                  type="number"
+                  value={remotePort}
+                  onChange={(e) => setRemotePort(e.target.value === "" ? "" : Number(e.target.value))}
+                  placeholder={reverse ? "5555" : "8080"}
+                  className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316]"
+                  required
+                />
               </div>
               <div>
                 <button
@@ -228,11 +242,28 @@ export default function PortForwarder({
                       <Layers size={15} />
                     </div>
                     <div>
-                      <h4 className="font-medium text-xs text-white">{pm.name}</h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-medium text-xs text-white">{pm.name}</h4>
+                        {pm.reverse ? (
+                          <span className="px-1 py-0.5 text-[8px] leading-none bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded font-sans">反向 -R</span>
+                        ) : (
+                          <span className="px-1 py-0.5 text-[8px] leading-none bg-green-500/10 text-green-400 border border-green-500/20 rounded font-sans">标准 -L</span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono mt-0.5">
-                        <span className="text-amber-400">127.0.0.1:{pm.localPort}</span>
-                        <ArrowRight size={10} className="text-gray-500" />
-                        <span className="text-indigo-400">remote:{pm.remotePort}</span>
+                        {pm.reverse ? (
+                          <>
+                            <span className="text-indigo-400">remote:{pm.remotePort}</span>
+                            <span className="text-rose-400 font-bold">&larr;</span>
+                            <span className="text-amber-400">127.0.0.1:{pm.localPort}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-amber-400">127.0.0.1:{pm.localPort}</span>
+                            <span className="text-green-400 font-bold">&rarr;</span>
+                            <span className="text-indigo-400">remote:{pm.remotePort}</span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>

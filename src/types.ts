@@ -19,6 +19,7 @@ export interface PortMapping {
   localPort: number;
   remotePort: number;
   active: boolean;
+  reverse?: boolean;
   metrics: {
     bytesSent: number;
     bytesReceived: number;
