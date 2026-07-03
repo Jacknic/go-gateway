@@ -157,7 +157,7 @@ def pipe(src, dst):
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 try:
-    s.bind(('127.0.0.1', %d))
+    s.bind(('0.0.0.0', %d))
 except Exception as e:
     sys.stderr.write('BIND_ERROR: ' + str(e))
     sys.stderr.flush()
