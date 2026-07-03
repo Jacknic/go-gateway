@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -20,9 +21,16 @@ func connectSSH(config Config) (*ssh.Client, error) {
 	}
 
 	if config.SSHKeyPath != "" {
-		// In a real CLI, we would read the key from the filesystem
-		// For safety and illustration, this mimics loading a standard PEM block
 		log.Printf("[*] Loading private key from: %s\n", config.SSHKeyPath)
+		keyBytes, err := os.ReadFile(config.SSHKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read private key file: %w", err)
+		}
+		signer, err := ssh.ParsePrivateKey(keyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
 	// Default fallback authentication for the example

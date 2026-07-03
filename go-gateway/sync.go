@@ -64,7 +64,9 @@ func (fs *FileSyncer) Sync() error {
 		if localSig.IsDirectory {
 			if !exists {
 				log.Printf("[*] Sync: creating remote directory: %s\n", relPath)
-				fs.createRemoteDirectory(filepath.Join(fs.remoteDir, relPath))
+				if err := fs.createRemoteDirectory(filepath.Join(fs.remoteDir, relPath)); err != nil {
+					log.Printf("[-] Failed to create remote directory %s: %v\n", relPath, err)
+				}
 			}
 			continue
 		}
@@ -89,7 +91,9 @@ func (fs *FileSyncer) Sync() error {
 		if _, exists := localCatalog[relPath]; !exists {
 			if !remoteSig.IsDirectory {
 				log.Printf("[*] Sync: deleting orphaned remote file: %s\n", relPath)
-				fs.deleteRemoteFile(filepath.Join(fs.remoteDir, relPath))
+				if err := fs.deleteRemoteFile(filepath.Join(fs.remoteDir, relPath)); err != nil {
+					log.Printf("[-] Failed to delete orphaned remote file %s: %v\n", relPath, err)
+				}
 			}
 		}
 	}
@@ -99,16 +103,54 @@ func (fs *FileSyncer) Sync() error {
 
 // StartWatching registers system fswatch notifications and triggers incremental delta-syncs.
 func (fs *FileSyncer) StartWatching() {
-	// In production, use "github.com/fsnotify/fsnotify"
 	log.Println("[+] File system watching initialized on: " + fs.localDir)
 	
-	// Simulated watch loop
+	// Pre-populate initial catalog
+	lastCatalog, err := fs.buildLocalCatalog()
+	if err != nil {
+		log.Printf("[-] Initial catalog compilation failed for watcher: %v\n", err)
+		lastCatalog = make(map[string]FileSignature)
+	}
+
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		// Walk directories, find any files changed since the last execution
-		// trigger fast, single-file incremental syncs
+		currentCatalog, err := fs.buildLocalCatalog()
+		if err != nil {
+			log.Printf("[-] Watcher: failed to build catalog: %v\n", err)
+			continue
+		}
+
+		hasChanges := false
+		for relPath, currentSig := range currentCatalog {
+			lastSig, exists := lastCatalog[relPath]
+			if !exists {
+				log.Printf("[*] Watch: detected NEW file/dir: %s\n", relPath)
+				hasChanges = true
+			} else if currentSig.Hash != lastSig.Hash || currentSig.IsDirectory != lastSig.IsDirectory {
+				log.Printf("[*] Watch: detected MODIFIED file/dir: %s\n", relPath)
+				hasChanges = true
+			}
+		}
+
+		// Also check for deletions
+		for relPath := range lastCatalog {
+			if _, exists := currentCatalog[relPath]; !exists {
+				log.Printf("[*] Watch: detected DELETED file/dir: %s\n", relPath)
+				hasChanges = true
+			}
+		}
+
+		if hasChanges {
+			log.Println("[*] Watch: triggering delta sync run...")
+			if err := fs.Sync(); err != nil {
+				log.Printf("[-] Watch: delta sync execution failed: %v\n", err)
+			} else {
+				log.Println("[+] Watch: delta sync successfully completed")
+			}
+			lastCatalog = currentCatalog
+		}
 	}
 }
 
@@ -225,16 +267,12 @@ func (fs *FileSyncer) transferFile(relPath string, size int64) error {
 	remoteDir := filepath.Dir(remoteFilePath)
 
 	// Ensure remote directory tree exists
-	fs.createRemoteDirectory(remoteDir)
+	if err := fs.createRemoteDirectory(remoteDir); err != nil {
+		return fmt.Errorf("failed to create remote directory: %w", err)
+	}
 
-	// Stream write target over stdin pipe
-	go func() {
-		w, _ := session.StdinPipe()
-		defer w.Close()
-		
-		// Custom header or direct stream transfer
-		io.Copy(w, file)
-	}()
+	// Stream write target over stdin cleanly and efficiently
+	session.Stdin = file
 
 	cmd := fmt.Sprintf("cat > '%s'", remoteFilePath)
 	return session.Run(cmd)
