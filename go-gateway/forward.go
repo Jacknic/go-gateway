@@ -232,7 +232,7 @@ finally:
 			stdoutPipe, _ = session.StdoutPipe()
 			stderrPipe, _ = session.StderrPipe()
 			stdinPipe, _ = session.StdinPipe()
-			
+
 			pythonCmdFallback := strings.Replace(pythonCmd, "python3 -c", "python -c", 1)
 			if err := session.Start(pythonCmdFallback); err != nil {
 				session.Close()
