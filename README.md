@@ -1,20 +1,39 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Go Remote Dev Gateway - 功能使用说明书
 
-# Run and deploy your AI Studio app
+本系统是一个基于 Go 语言的高性能、低延迟远程开发辅助网关（类 JetBrains Gateway 架构）。通过在本地与远程服务器之间建立高效通道，实现了极速的文件增量同步、安全的 TCP 端口转发和实时的流量状态监控。
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/c89c09fa-9e6d-4d53-a265-cf59fc391338
+## 核心功能模块
 
-## Run Locally
+### 1. 多开发工作空间管理 (Workspace Management)
+*   **服务器配置**：支持添加多个远程开发节点，包括 SSH 主机地址、端口、用户名和认证方式（支持 SSH 密钥或账户密码）。
+*   **连接控制**：通过左侧栏的 **启动 Gateway** 按钮，可以一键建立与远程节点的连接通道。
+*   **状态感知**：实时显示当前节点的连接状态（已连接、正在握手、已断开）以及往返网络延迟 (Latency Ms)。
 
-**Prerequisites:**  Node.js
+### 2. 本地端口映射 (SSH Tunnel Port Forwarding)
+*   **双向端口转发**：允许将本地的 TCP 监听端口（如 `5173`, `8080`）一键映射至远程服务器的目标端口，从而像开发本地应用一样无缝调试远程服务。
+*   **实时带宽流速图表 (Throughput)**：通过高精度时序图表，直观监控通过 Go 转发网关的数据发送（Upload）与接收（Download）流量。
+*   **零内存拷贝优化**：底层利用 Go 高性能的 `io.Copy` 与内核缓冲映射，大幅降低 TCP 往返包重传延迟，在低带宽或高拥堵网络下亦能保持连接稳定。
 
+### 3. 文件同步视觉服务 (File Watcher & Delta Sync)
+*   **本地热重载监听 (`fswatch`)**：启动网关连接后，Go 文件系统监视器会以极低 CPU 开销轮询/侦听本地文件目录的改动。
+*   **SHA-256 增量同步算法**：当检测到本地文件产生变更（可点击“模拟修改”按钮测试），系统会计算并对比两端的 SHA-256 指纹，只传输差异增量 (Delta)，避免全量同步。
+*   **实时操作控制台**：直观展示本地开发目录与远程服务器目录的树形结构对比，并能在底部的终端中实时输出同步操作日志。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### 4. 架构优化 AI 助手 (AI Architecture Copilot)
+*   **智能源码阅读**：AI 助手深度集成并通读了 `/go-gateway` 目录下的 Go 核心转发及同步代码。
+*   **探究与优化**：提供多线程 TCP 并发、Byte Pool 缓冲池扩展、多平台交叉编译等深度调优建议。支持结合当前查看的源文件进行针对性的架构探讨。
+
+---
+
+## 快速上手步骤
+
+1.  **启动网关连接**：
+    在左侧工作空间列表中选择一个可用的开发节点（如系统默认提供的“AWS Singapore Cluster”），点击卡片底部的 **启动 Gateway**。系统将开始握手建连。
+2.  **映射远程端口**：
+    切换到 **本地端口映射** 标签页，在表单中输入本地监听端口与远程目标端口，点击 **配置映射通道**。激活后，可直接访问本地端口测试远程服务。
+3.  **体验增量文件同步**：
+    切换到 **文件同步视觉** 标签页。点击本地文件树（如 `App.tsx` 旁边的 **模拟修改** 按钮），底部终端将立即触发 `Watch` 捕获事件，并自动运行 `SHA-256 Delta Sync` 增量同步，实时把修改反映到远程开发机树形图中。
+4.  **讨论架构优化**：
+    切换到 **架构优化 AI** 标签页，您可以点击下方推荐的主题快速发送，或是直接向 AI 提出关于 Go 高并发网络编程或文件差分算法的专业问题。

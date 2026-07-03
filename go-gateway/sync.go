@@ -148,8 +148,8 @@ func (fs *FileSyncer) StartWatching() {
 				log.Printf("[-] Watch: delta sync execution failed: %v\n", err)
 			} else {
 				log.Println("[+] Watch: delta sync successfully completed")
+				lastCatalog = currentCatalog
 			}
-			lastCatalog = currentCatalog
 		}
 	}
 }
@@ -219,7 +219,7 @@ func (fs *FileSyncer) buildRemoteCatalog() (map[string]FileSignature, error) {
 	// Run a Go-based scanner or custom bash script on remote
 	// For visualization, we invoke a lightweight find/sha256sum command.
 	// E.g.: "find /app -type f -exec sha256sum {} +"
-	cmd := fmt.Sprintf("find %s -type f -exec sha256sum {} +", fs.remoteDir)
+	cmd := fmt.Sprintf("find %s -type f -exec sha256sum {} +", escapeShellArg(fs.remoteDir))
 	output, err := session.Output(cmd)
 	if err != nil {
 		return nil, err
@@ -274,7 +274,7 @@ func (fs *FileSyncer) transferFile(relPath string, size int64) error {
 	// Stream write target over stdin cleanly and efficiently
 	session.Stdin = file
 
-	cmd := fmt.Sprintf("cat > '%s'", remoteFilePath)
+	cmd := fmt.Sprintf("cat > %s", escapeShellArg(remoteFilePath))
 	return session.Run(cmd)
 }
 
@@ -284,7 +284,7 @@ func (fs *FileSyncer) createRemoteDirectory(dirPath string) error {
 		return err
 	}
 	defer session.Close()
-	return session.Run(fmt.Sprintf("mkdir -p '%s'", dirPath))
+	return session.Run(fmt.Sprintf("mkdir -p %s", escapeShellArg(dirPath)))
 }
 
 func (fs *FileSyncer) deleteRemoteFile(filePath string) error {
@@ -293,7 +293,12 @@ func (fs *FileSyncer) deleteRemoteFile(filePath string) error {
 		return err
 	}
 	defer session.Close()
-	return session.Run(fmt.Sprintf("rm -f '%s'", filePath))
+	return session.Run(fmt.Sprintf("rm -f %s", escapeShellArg(filePath)))
+}
+
+// escapeShellArg wraps a shell argument in single quotes and safely escapes existing single quotes.
+func escapeShellArg(arg string) string {
+	return "'" + strings.ReplaceAll(arg, "'", "'\\''") + "'"
 }
 
 func calculateSHA256(filePath string) (string, error) {
