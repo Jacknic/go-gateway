@@ -35,6 +35,12 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Upload Web App Production Build
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-app-production-build
+          path: dist/
+
   # -----------------------------------------------------------------
   # JOB 2: Go Gateway Component Validation and Tests
   # -----------------------------------------------------------------
