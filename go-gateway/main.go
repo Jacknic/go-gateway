@@ -15,15 +15,15 @@ type Config struct {
 	SSHUser    string // e.g. "root"
 	SSHPass    string // password authentication
 	SSHKeyPath string // SSH private key file path
-	
+
 	// Port forwarding params
-	LocalPort  int    // e.g. 8080
-	RemotePort int    // e.g. 8080
-	
+	LocalPort  int // e.g. 8080
+	RemotePort int // e.g. 8080
+
 	// Sync params
-	LocalDir   string // e.g. "./src"
-	RemoteDir  string // e.g. "/var/www/src"
-	Watch      bool   // continuous watching
+	LocalDir  string // e.g. "./src"
+	RemoteDir string // e.g. "/var/www/src"
+	Watch     bool   // continuous watching
 }
 
 func main() {
@@ -34,11 +34,11 @@ func main() {
 	flag.StringVar(&config.SSHUser, "user", "root", "SSH user name")
 	flag.StringVar(&config.SSHPass, "pass", "", "SSH password (optional, prefer SSH keys)")
 	flag.StringVar(&config.SSHKeyPath, "key", "", "SSH private key file path")
-	
+
 	// Port forward flags
 	flag.IntVar(&config.LocalPort, "local-port", 8080, "Local port to listen on for forwarding")
 	flag.IntVar(&config.RemotePort, "remote-port", 8080, "Target port on the remote host")
-	
+
 	// Sync flags
 	flag.StringVar(&config.LocalDir, "local-dir", "./", "Local directory to synchronize")
 	flag.StringVar(&config.RemoteDir, "remote-dir", "/app", "Remote target directory")
@@ -74,17 +74,17 @@ func main() {
 		if err != nil {
 			log.Fatalf("[-] Forwarder initialization failed: %v", err)
 		}
-		
+
 		go func() {
 			if err := forwarder.Start(); err != nil {
 				log.Printf("[-] Forwarder terminated with error: %v\n", err)
 			}
 		}()
-		
+
 	case "sync":
 		log.Printf("[*] Launching File Synchronization: %s -> %s\n", config.LocalDir, config.RemoteDir)
 		syncer := NewFileSyncer(sshClient, config.LocalDir, config.RemoteDir)
-		
+
 		// Initial full delta-sync
 		log.Println("[*] Calculating file signatures and executing initial sync...")
 		if err := syncer.Sync(); err != nil {

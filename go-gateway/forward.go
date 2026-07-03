@@ -89,7 +89,7 @@ func (pf *PortForwarder) Start() error {
 		active := pf.activeConn
 		pf.mu.Unlock()
 
-		log.Printf("[*] Connection #%d accepted from %s. Tunneling to remote:%d...\n", 
+		log.Printf("[*] Connection #%d accepted from %s. Tunneling to remote:%d...\n",
 			active, localConn.RemoteAddr().String(), pf.remotePort)
 
 		go pf.handleConnection(localConn, active)
@@ -146,6 +146,6 @@ func (pf *PortForwarder) handleConnection(localConn net.Conn, id int) {
 
 	wg.Wait()
 	duration := time.Since(startTime)
-	log.Printf("[+] Tunnel #%d summary: %d bytes sent, %d bytes received, session duration: %v\n", 
+	log.Printf("[+] Tunnel #%d summary: %d bytes sent, %d bytes received, session duration: %v\n",
 		id, sentBytes, recvBytes, duration)
 }

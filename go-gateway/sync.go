@@ -104,7 +104,7 @@ func (fs *FileSyncer) Sync() error {
 // StartWatching registers system fswatch notifications and triggers incremental delta-syncs.
 func (fs *FileSyncer) StartWatching() {
 	log.Println("[+] File system watching initialized on: " + fs.localDir)
-	
+
 	// Pre-populate initial catalog
 	lastCatalog, err := fs.buildLocalCatalog()
 	if err != nil {
