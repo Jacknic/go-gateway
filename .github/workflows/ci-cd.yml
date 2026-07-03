@@ -49,7 +49,7 @@ jobs:
       - name: Setup Go Environment
         uses: actions/setup-go@v6
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache-dependency-path: go-gateway/go.sum
 
       - name: Verify Go Formatting
@@ -91,7 +91,7 @@ jobs:
       - name: Setup Go Environment
         uses: actions/setup-go@v6
         with:
-          go-version: '1.21'
+          go-version: '1.25'
           cache-dependency-path: go-gateway/go.sum
 
       - name: Install Go Dependencies
