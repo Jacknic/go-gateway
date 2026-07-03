@@ -93,42 +93,8 @@ func NewPortForwarder(client *ssh.Client, local, remote int, reverse bool) (*Por
 	}
 
 	if reverse {
-		// Remote Port Forwarding: listen on remote port
-		// Try multiple bind configurations to guarantee a listening port on the target interface.
-		// On dual-stack or container environments, resolving localhost or using different wildcards
-		// can behave differently. We loop through the standard options.
-		bindAddresses := []string{
-			fmt.Sprintf("127.0.0.1:%d", remote),
-			fmt.Sprintf("localhost:%d", remote),
-			fmt.Sprintf("0.0.0.0:%d", remote),
-			fmt.Sprintf("[::1]:%d", remote),
-			fmt.Sprintf(":%d", remote),
-		}
-
-		var listener net.Listener
-		var err error
-		var successfulAddr string
-
-		log.Printf("[*] Initiating remote port forwarding bind loop for port %d...\n", remote)
-		for _, addr := range bindAddresses {
-			log.Printf("[*] Trying to bind remote port forwarding on %s...\n", addr)
-			listener, err = client.Listen("tcp", addr)
-			if err == nil {
-				successfulAddr = addr
-				break
-			}
-			log.Printf("[-] Failed to bind on %s: %v\n", addr, err)
-		}
-
-		if err != nil {
-			log.Printf("[-] Standard SSH Remote Port Forwarding (-R) failed: %v\n", err)
-			log.Printf("[*] SSH -R reverse port forwarding is disabled on the remote SSH server.\n")
-			log.Printf("[*] Falling back to SSH Command-based Remote Port Forwarder (using Python on remote side) to listen on remote port %d...\n", remote)
-			pf.useCmdFallback = true
-		} else {
-			log.Printf("[+] Remote port forwarding successfully bound on remote interface: %s\n", successfulAddr)
-			pf.sshListener = listener
-		}
+		log.Printf("[*] Using SSH Command-based Remote Port Forwarder (using Python on remote side) to listen on remote port %d...\n", remote)
+		pf.useCmdFallback = true
 	} else {
 		// Local Port Forwarding: listen on local port
 		addr := fmt.Sprintf("127.0.0.1:%d", local)
