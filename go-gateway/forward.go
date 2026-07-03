@@ -93,12 +93,24 @@ func NewPortForwarder(client *ssh.Client, local, remote int, reverse bool) (*Por
 
 	if reverse {
 		// Remote Port Forwarding: listen on remote port
-		// We bind to 127.0.0.1:remotePort on the remote SSH server
+		// Try binding to 127.0.0.1:remotePort first (standard loopback, most secure).
+		// If that fails, fallback to 0.0.0.0:remotePort or :remotePort to cover all environments.
 		addr := fmt.Sprintf("127.0.0.1:%d", remote)
 		listener, err := client.Listen("tcp", addr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to listen on remote port %d: %w", remote, err)
+			log.Printf("[*] Failed to bind remote port forwarding on 127.0.0.1:%d: %v. Retrying with 0.0.0.0:%d...\n", remote, err, remote)
+			addr = fmt.Sprintf("0.0.0.0:%d", remote)
+			listener, err = client.Listen("tcp", addr)
+			if err != nil {
+				log.Printf("[*] Failed to bind remote port forwarding on 0.0.0.0:%d: %v. Retrying with default loopback fallback (:port)...\n", remote, err)
+				addr = fmt.Sprintf(":%d", remote)
+				listener, err = client.Listen("tcp", addr)
+				if err != nil {
+					return nil, fmt.Errorf("failed to listen on remote port %d with all bind configurations: %w", remote, err)
+				}
+			}
 		}
+		log.Printf("[+] Remote port forwarding successfully bound on remote interface %s\n", addr)
 		pf.sshListener = listener
 	} else {
 		// Local Port Forwarding: listen on local port
