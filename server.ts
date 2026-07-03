@@ -201,10 +201,31 @@ app.get("/api/workspaces", (req, res) => {
 
 // Create Workspace
 app.post("/api/workspaces", (req, res) => {
-  const { name, host, user, port, authMethod, remotePath, localPath } = req.body;
+  let { name, host, user, port, authMethod, remotePath, localPath } = req.body;
   
   if (!name || !host || !user) {
     return res.status(400).json({ error: "Missing required workspace fields" });
+  }
+
+  // Parse user@host if provided in either host or user fields
+  if (host.includes("@")) {
+    const parts = host.split("@");
+    user = parts[0];
+    host = parts[1];
+  } else if (user.includes("@")) {
+    const parts = user.split("@");
+    if (host === "" || host === "127.0.0.1" || host === "localhost") {
+      user = parts[0];
+      host = parts[1];
+    }
+  }
+
+  // Parse custom port from host if host contains colon, e.g. cnb.space:2222
+  let finalPort = Number(port) || 22;
+  if (host.includes(":")) {
+    const parts = host.split(":");
+    host = parts[0];
+    finalPort = Number(parts[1]) || finalPort;
   }
 
   const newWorkspace = {
@@ -212,7 +233,7 @@ app.post("/api/workspaces", (req, res) => {
     name,
     host,
     user,
-    port: Number(port) || 22,
+    port: finalPort,
     authMethod: authMethod || "ssh_key",
     remotePath: remotePath || "/app",
     localPath: localPath || "./",

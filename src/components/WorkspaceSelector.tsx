@@ -31,11 +31,36 @@ export default function WorkspaceSelector({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !host || !user) return;
+
+    let parsedUser = user;
+    let parsedHost = host;
+    let parsedPort = port;
+
+    // Support parsing user@host (e.g., username@cnb.space)
+    if (host.includes("@")) {
+      const parts = host.split("@");
+      parsedUser = parts[0];
+      parsedHost = parts[1];
+    } else if (user.includes("@")) {
+      const parts = user.split("@");
+      if (host === "" || host === "127.0.0.1" || host === "localhost" || host === "ubuntu") {
+        parsedUser = parts[0];
+        parsedHost = parts[1];
+      }
+    }
+
+    // Support parsing host:port (e.g., cnb.space:2222)
+    if (parsedHost.includes(":")) {
+      const parts = parsedHost.split(":");
+      parsedHost = parts[0];
+      parsedPort = Number(parts[1]) || port;
+    }
+
     onAddWorkspace({
       name,
-      host,
-      user,
-      port,
+      host: parsedHost,
+      user: parsedUser,
+      port: parsedPort,
       authMethod,
       remotePath,
       localPath,
@@ -254,13 +279,13 @@ export default function WorkspaceSelector({
               <div className="grid grid-cols-3 gap-3">
                 <div className="col-span-2">
                   <label className="block text-[11px] font-medium text-gray-400 mb-1">
-                    SSH 主机地址 (IP/Domain)
+                    SSH 主机 (支持 username@cnb.space)
                   </label>
                   <input
                     type="text"
                     value={host}
                     onChange={(e) => setHost(e.target.value)}
-                    placeholder="13.212.45.101"
+                    placeholder="13.212.45.101 或 username@cnb.space"
                     className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316] placeholder-gray-500"
                     required
                   />
@@ -288,7 +313,8 @@ export default function WorkspaceSelector({
                     type="text"
                     value={user}
                     onChange={(e) => setUser(e.target.value)}
-                    className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316]"
+                    placeholder="e.g. ubuntu 或 username@cnb.space"
+                    className="w-full bg-[#1e2030] border border-[#2c2f44] rounded px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#f97316] placeholder-gray-500"
                     required
                   />
                 </div>

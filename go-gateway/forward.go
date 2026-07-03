@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,28 @@ import (
 
 // connectSSH configures and initializes an SSH connection to the remote host.
 func connectSSH(config Config) (*ssh.Client, error) {
+	// Support parsing user@host from SSHHost or SSHUser if they contain '@'
+	// e.g., if user inputted username@cnb.space in Host or User
+	if strings.Contains(config.SSHHost, "@") {
+		parts := strings.SplitN(config.SSHHost, "@", 2)
+		config.SSHUser = parts[0]
+		config.SSHHost = parts[1]
+		log.Printf("[*] Extracted SSH user '%s' and host '%s' from host parameter\n", config.SSHUser, config.SSHHost)
+	} else if strings.Contains(config.SSHUser, "@") {
+		parts := strings.SplitN(config.SSHUser, "@", 2)
+		// Only override host if host is default/empty/local
+		if config.SSHHost == "" || config.SSHHost == "127.0.0.1" || config.SSHHost == "127.0.0.1:22" || config.SSHHost == "localhost:22" || config.SSHHost == "localhost" {
+			config.SSHUser = parts[0]
+			config.SSHHost = parts[1]
+			log.Printf("[*] Extracted SSH user '%s' and host '%s' from user parameter\n", config.SSHUser, config.SSHHost)
+		}
+	}
+
+	// Ensure SSHHost contains a port, default to 22
+	if !strings.Contains(config.SSHHost, ":") {
+		config.SSHHost = config.SSHHost + ":22"
+	}
+
 	var authMethods []ssh.AuthMethod
 
 	if config.SSHPass != "" {

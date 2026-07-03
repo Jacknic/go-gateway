@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -47,6 +48,23 @@ func main() {
 	flag.BoolVar(&config.Watch, "watch", false, "Enable real-time file system watch and continuous sync")
 
 	flag.Parse()
+
+	// Parse user@host formatting if found in Host or User flags (e.g. username@cnb.space)
+	if strings.Contains(config.SSHHost, "@") {
+		parts := strings.SplitN(config.SSHHost, "@", 2)
+		config.SSHUser = parts[0]
+		config.SSHHost = parts[1]
+	} else if strings.Contains(config.SSHUser, "@") {
+		parts := strings.SplitN(config.SSHUser, "@", 2)
+		if config.SSHHost == "" || config.SSHHost == "127.0.0.1" || config.SSHHost == "127.0.0.1:22" || config.SSHHost == "localhost:22" || config.SSHHost == "localhost" {
+			config.SSHUser = parts[0]
+			config.SSHHost = parts[1]
+		}
+	}
+
+	if !strings.Contains(config.SSHHost, ":") {
+		config.SSHHost = config.SSHHost + ":22"
+	}
 
 	fmt.Printf(`
 =========================================
