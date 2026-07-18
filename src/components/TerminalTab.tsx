@@ -5,6 +5,115 @@ import { Terminal as TerminalIcon, RefreshCw, AlertTriangle } from "lucide-react
 import { Workspace } from "../types";
 import "xterm/css/xterm.css";
 
+interface ThemeDefinition {
+  id: string;
+  name: string;
+  background: string;
+  foreground: string;
+  cursor: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+}
+
+const TERMINAL_THEMES: ThemeDefinition[] = [
+  {
+    id: "cosmic",
+    name: "Cosmic Dark",
+    background: "#0d0e15",
+    foreground: "#b5e8e0",
+    cursor: "#f97316",
+    black: "#1e1e24",
+    red: "#f43f5e",
+    green: "#10b981",
+    yellow: "#f59e0b",
+    blue: "#3b82f6",
+    magenta: "#d946ef",
+    cyan: "#06b6d4",
+    white: "#f3f4f6",
+  },
+  {
+    id: "dracula",
+    name: "Dracula",
+    background: "#282a36",
+    foreground: "#f8f8f2",
+    cursor: "#ff79c6",
+    black: "#21222c",
+    red: "#ff5555",
+    green: "#50fa7b",
+    yellow: "#f1fa8c",
+    blue: "#bd93f9",
+    magenta: "#ff79c6",
+    cyan: "#8be9fd",
+    white: "#f8f8f2",
+  },
+  {
+    id: "solarized",
+    name: "Solarized Dark",
+    background: "#002b36",
+    foreground: "#839496",
+    cursor: "#93a1a1",
+    black: "#073642",
+    red: "#dc322f",
+    green: "#859900",
+    yellow: "#b58900",
+    blue: "#268bd2",
+    magenta: "#d33682",
+    cyan: "#2aa198",
+    white: "#eee8d5",
+  },
+  {
+    id: "gruvbox",
+    name: "Gruvbox Dark",
+    background: "#282828",
+    foreground: "#ebdbb2",
+    cursor: "#fe8019",
+    black: "#282828",
+    red: "#cc241d",
+    green: "#98971a",
+    yellow: "#d79921",
+    blue: "#458588",
+    magenta: "#b16286",
+    cyan: "#689d6a",
+    white: "#a89984",
+  },
+  {
+    id: "nord",
+    name: "Nord",
+    background: "#2e3440",
+    foreground: "#d8dee9",
+    cursor: "#88c0d0",
+    black: "#3b4252",
+    red: "#bf616a",
+    green: "#a3be8c",
+    yellow: "#ebcb8b",
+    blue: "#81a1c1",
+    magenta: "#b48ead",
+    cyan: "#88c0d0",
+    white: "#e5e9f0",
+  },
+  {
+    id: "monokai",
+    name: "Monokai",
+    background: "#272822",
+    foreground: "#f8f8f2",
+    cursor: "#f92672",
+    black: "#272822",
+    red: "#f92672",
+    green: "#a6e22e",
+    yellow: "#f4bf75",
+    blue: "#66d9ef",
+    magenta: "#ae81ff",
+    cyan: "#a1efe4",
+    white: "#f8f8f2",
+  },
+];
+
 interface TerminalTabProps {
   workspace: Workspace;
 }
@@ -15,6 +124,11 @@ export default function TerminalTab({ workspace }: TerminalTabProps) {
   const fitAddonInstance = useRef<FitAddon | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<"connecting" | "connected" | "disconnected" | "error">("connecting");
+  const [selectedThemeId, setSelectedThemeId] = useState<string>(() => {
+    return localStorage.getItem("terminal_theme_id") || "cosmic";
+  });
+
+  const currentTheme = TERMINAL_THEMES.find(t => t.id === selectedThemeId) || TERMINAL_THEMES[0];
 
   const connectTerminal = () => {
     if (!terminalRef.current) return;
@@ -27,22 +141,23 @@ export default function TerminalTab({ workspace }: TerminalTabProps) {
 
     // Initialize xterm if not already initialized
     if (!terminalInstance.current) {
+      const activeTheme = TERMINAL_THEMES.find(t => t.id === selectedThemeId) || TERMINAL_THEMES[0];
       const term = new Terminal({
         cursorBlink: true,
         fontFamily: "JetBrains Mono, Fira Code, Courier New, monospace",
         fontSize: 13,
         theme: {
-          background: "#0d0e15",
-          foreground: "#b5e8e0",
-          cursor: "#f97316",
-          black: "#1e1e24",
-          red: "#f43f5e",
-          green: "#10b981",
-          yellow: "#f59e0b",
-          blue: "#3b82f6",
-          magenta: "#d946ef",
-          cyan: "#06b6d4",
-          white: "#f3f4f6",
+          background: activeTheme.background,
+          foreground: activeTheme.foreground,
+          cursor: activeTheme.cursor,
+          black: activeTheme.black,
+          red: activeTheme.red,
+          green: activeTheme.green,
+          yellow: activeTheme.yellow,
+          blue: activeTheme.blue,
+          magenta: activeTheme.magenta,
+          cyan: activeTheme.cyan,
+          white: activeTheme.white,
         },
       });
 
@@ -124,6 +239,25 @@ export default function TerminalTab({ workspace }: TerminalTabProps) {
     };
   }, [workspace.id]);
 
+  useEffect(() => {
+    if (terminalInstance.current) {
+      terminalInstance.current.options.theme = {
+        background: currentTheme.background,
+        foreground: currentTheme.foreground,
+        cursor: currentTheme.cursor,
+        black: currentTheme.black,
+        red: currentTheme.red,
+        green: currentTheme.green,
+        yellow: currentTheme.yellow,
+        blue: currentTheme.blue,
+        magenta: currentTheme.magenta,
+        cyan: currentTheme.cyan,
+        white: currentTheme.white,
+      };
+    }
+    localStorage.setItem("terminal_theme_id", selectedThemeId);
+  }, [selectedThemeId]);
+
   const handleReconnect = () => {
     if (terminalInstance.current) {
       terminalInstance.current.dispose();
@@ -133,7 +267,10 @@ export default function TerminalTab({ workspace }: TerminalTabProps) {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-180px)] w-full bg-[#0d0e15] border border-[#26293a] rounded-lg overflow-hidden">
+    <div 
+      className="flex flex-col h-[calc(100vh-180px)] w-full border border-[#26293a] rounded-lg overflow-hidden transition-colors duration-300"
+      style={{ backgroundColor: currentTheme.background }}
+    >
       {/* Terminal Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 bg-[#141622] border-b border-[#26293a]">
         <div className="flex items-center gap-2">
@@ -158,18 +295,39 @@ export default function TerminalTab({ workspace }: TerminalTabProps) {
           </span>
         </div>
 
-        <button
-          onClick={handleReconnect}
-          className="p-1 rounded bg-[#222436] hover:bg-[#2c2f4a] text-gray-400 hover:text-white transition duration-150 flex items-center gap-1 text-[11px]"
-          title="Restart Terminal Session"
-        >
-          <RefreshCw size={12} className={status === "connecting" ? "animate-spin" : ""} />
-          <span>重连终端</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Theme Selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">主题:</span>
+            <select
+              value={selectedThemeId}
+              onChange={(e) => setSelectedThemeId(e.target.value)}
+              className="bg-[#222436] border border-[#2b2d42] text-xs text-gray-200 rounded px-2 py-0.5 outline-none cursor-pointer focus:border-orange-500 transition-colors"
+            >
+              {TERMINAL_THEMES.map((theme) => (
+                <option key={theme.id} value={theme.id} className="bg-[#141622]">
+                  {theme.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={handleReconnect}
+            className="p-1 px-2 rounded bg-[#222436] hover:bg-[#2c2f4a] text-gray-400 hover:text-white transition duration-150 flex items-center gap-1 text-[11px]"
+            title="Restart Terminal Session"
+          >
+            <RefreshCw size={12} className={status === "connecting" ? "animate-spin" : ""} />
+            <span>重连终端</span>
+          </button>
+        </div>
       </div>
 
       {/* Terminal Body */}
-      <div className="flex-1 p-3 bg-[#0d0e15] relative overflow-hidden">
+      <div 
+        className="flex-1 p-3 relative overflow-hidden transition-colors duration-300"
+        style={{ backgroundColor: currentTheme.background }}
+      >
         {status === "error" && (
           <div className="absolute inset-0 bg-[#0d0e15]/90 flex flex-col items-center justify-center text-center p-6 z-10">
             <AlertTriangle className="text-red-500 w-10 h-10 mb-2 animate-bounce" />
