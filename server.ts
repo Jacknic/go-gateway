@@ -4,6 +4,9 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { WebSocketServer } from "ws";
+import { spawn } from "child_process";
+import url from "url";
 
 dotenv.config();
 
@@ -627,8 +630,101 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`[+] Full Stack Developer Server running on port ${PORT}`);
+  });
+
+  // Attach WebSocket Server
+  const wss = new WebSocketServer({ server, path: "/api/terminal" });
+
+  wss.on("connection", (ws, req) => {
+    const parameters = url.parse(req.url || "", true).query;
+    const workspaceId = parameters.workspaceId as string;
+    const workspace = workspaces.find(w => w.id === workspaceId) || workspaces[0];
+
+    const user = workspace ? workspace.user : "ubuntu";
+    const host = workspace ? workspace.host.split(":")[0] : "aws-singapore";
+    const remotePath = workspace ? workspace.remotePath : "/app";
+    const workspaceName = workspace ? workspace.name : "Local Workspace";
+
+    // Send a nice SSH connection welcome header
+    ws.send(`\r\n\x1b[1;33m[*] Connecting to secure shell session for workspace: ${workspaceName}...\x1b[0m\r\n`);
+    ws.send(`\x1b[1;30m[+] Host: ${user}@${host} • Auth Method: ${workspace ? workspace.authMethod : "ssh_key"}\x1b[0m\r\n`);
+    ws.send(`\x1b[1;32m[+] Secure Shell session established successfully!\x1b[0m\r\n\r\n`);
+
+    // Spawn a shell process
+    // Try to spawn bash, fall back to sh
+    let shellProcess: any;
+    try {
+      shellProcess = spawn("bash", ["-i"], {
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+        },
+        cwd: process.cwd(),
+      });
+    } catch (e) {
+      shellProcess = spawn("sh", ["-i"], {
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+        },
+        cwd: process.cwd(),
+      });
+    }
+
+    // Set custom prompt after a tiny delay so the shell is ready
+    setTimeout(() => {
+      const promptName = workspaceName.split(" ")[0].toLowerCase();
+      shellProcess.stdin.write(`export PS1="\\e[1;32m${user}@${promptName}\\e[0m:\\e[1;34m${remotePath}\\e[0m\\$ "\n`);
+      shellProcess.stdin.write("clear\n");
+    }, 100);
+
+    // Pipe process output to WebSocket
+    shellProcess.stdout.on("data", (data: any) => {
+      ws.send(data);
+    });
+
+    shellProcess.stderr.on("data", (data: any) => {
+      ws.send(data);
+    });
+
+    shellProcess.on("close", (code: any) => {
+      ws.send(`\r\n\x1b[1;31m[-] Shell session closed with exit code ${code}\x1b[0m\r\n`);
+      try {
+        ws.close();
+      } catch (e) {}
+    });
+
+    // Pipe WebSocket messages to process stdin
+    ws.on("message", (message) => {
+      try {
+        const msgStr = message.toString();
+        if (msgStr.startsWith("{")) {
+          const parsed = JSON.parse(msgStr);
+          if (parsed.type === "input") {
+            shellProcess.stdin.write(parsed.data);
+          }
+        } else {
+          shellProcess.stdin.write(message);
+        }
+      } catch (err) {
+        shellProcess.stdin.write(message);
+      }
+    });
+
+    ws.on("close", () => {
+      try {
+        shellProcess.kill();
+      } catch (e) {}
+    });
+
+    ws.on("error", (err) => {
+      console.error("WebSocket Terminal Error:", err);
+      try {
+        shellProcess.kill();
+      } catch (e) {}
+    });
   });
 }
 

@@ -5,6 +5,7 @@ import CodeViewer from "./components/CodeViewer";
 import PortForwarder from "./components/PortForwarder";
 import FileSyncer from "./components/FileSyncer";
 import AIAssistant from "./components/AIAssistant";
+import TerminalTab from "./components/TerminalTab";
 import { Workspace, PortMapping, FileItem, LogEntry, GoSourceFile } from "./types";
 
 export default function App() {
@@ -15,7 +16,7 @@ export default function App() {
   const [remoteFiles, setRemoteFiles] = useState<FileItem[]>([]);
   const [syncLogs, setSyncLogs] = useState<LogEntry[]>([]);
   const [goFiles, setGoFiles] = useState<GoSourceFile[]>([]);
-  const [activeTab, setActiveTab] = useState<"code" | "forward" | "sync" | "ai">("code");
+  const [activeTab, setActiveTab] = useState<"code" | "forward" | "sync" | "ai" | "terminal">("code");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
 
@@ -333,6 +334,18 @@ export default function App() {
                 <MessageSquare size={13} />
                 <span>架构优化 AI</span>
               </button>
+              <button
+                id="tab-terminal"
+                onClick={() => setActiveTab("terminal")}
+                className={`px-3 py-1.5 rounded-md flex items-center gap-1.5 transition-all ${
+                  activeTab === "terminal"
+                    ? "bg-[#f97316] text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-200"
+                }`}
+              >
+                <Terminal size={13} />
+                <span>工作区终端</span>
+              </button>
             </div>
           </div>
         ) : (
@@ -369,6 +382,10 @@ export default function App() {
               )}
 
               {activeTab === "ai" && <AIAssistant selectedFile="" />}
+
+              {activeTab === "terminal" && (
+                <TerminalTab workspace={activeWorkspace} />
+              )}
             </>
           ) : (
             <div className="h-full w-full flex flex-col items-center justify-center p-6 text-center select-none">
